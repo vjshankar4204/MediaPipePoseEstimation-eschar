@@ -11,11 +11,23 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 import os
 from plotly_3dview import plot_landmarks
+import matplotlib.pyplot as plt
+import time
+from IPython.display import display, clear_output
+%matplotlib ipympl
+
+
+# Function to create a mask based on the line equation
+def create_line_mask(image_shape, line_coefficients):
+    y, x = np.ogrid[:image_shape[0], :image_shape[1]]
+    mask = line_coefficients[0] * x + line_coefficients[1] * y + line_coefficients[2] > 0
+    return mask.astype(np.uint8) * 255
 
 # Specify the location of the file with the video to be read
 # Capture frames from a saved video
 # filename_r = '../Data/videos/exercise_stock_video3.mp4'
-filename_r = '../Data/videos/TheOverheadSquat.mp4'
+# filename_r = '../Data/videos/TheOverheadSquat.mp4'
+filename_r = '../../../Material/hill_raise/IMG_3734.MOV'
 # Capture frames from a webcam feed
 # filename_r = 4
 # Specify the location where the new video with detections will be written
@@ -38,6 +50,12 @@ stage = None
 rep_count = 0
 last_event_time = 0
 frame_count = 0
+
+# Plot the pixel intensity
+time_points = []
+intensity_values = []
+fig, ax = plt.subplots()
+fig.show()
 
 # Initialize the stage classifier variables
 stage_class = None
@@ -72,7 +90,7 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
 
         # Count frames and calculate time in video
         frame_count += 1
-        time = frame_count / fps #[s]
+        time_vid = frame_count / fps #[s]
 
         # Recolor image to RGB
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -96,6 +114,9 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
             hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
             knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
             ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+            left_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+            left_heel = [landmarks[mp_pose.PoseLandmark.LEFT_HEEL.value].x,landmarks[mp_pose.PoseLandmark.LEFT_HEEL.value].y]
+            left_footIndex = [landmarks[mp_pose.PoseLandmark.LEFT_FOOT_INDEX.value].x,landmarks[mp_pose.PoseLandmark.LEFT_FOOT_INDEX.value].y]
             
             hip_3d = [landmarks_3d[mp_pose.PoseLandmark.LEFT_HIP.value].x,landmarks_3d[mp_pose.PoseLandmark.LEFT_HIP.value].y,landmarks_3d[mp_pose.PoseLandmark.LEFT_HIP.value].z]
             knee_3d = [landmarks_3d[mp_pose.PoseLandmark.LEFT_KNEE.value].x,landmarks_3d[mp_pose.PoseLandmark.LEFT_KNEE.value].y,landmarks_3d[mp_pose.PoseLandmark.LEFT_KNEE.value].z]
@@ -122,7 +143,7 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
             # Specify the minimum time between reps
             min_rep_time = 3
             # Run the function
-            stage,rep_count,last_event_time,real_counter = rep_counter(angle,upper_limit,lower_limit,min_rep_count,min_rep_time,time,
+            stage,rep_count,last_event_time,real_counter = rep_counter(angle,upper_limit,lower_limit,min_rep_count,min_rep_time,time_vid,
                                                                        stage,rep_count,last_event_time,real_counter)
             ##########################################################################################################################
 
@@ -134,10 +155,14 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
             # Run image segmentation
             if results.segmentation_mask is not None:
                 segmented_image = image.copy()
-                tightness = 0.01
+                segmented_image1 = image.copy()
+                tightness = 0.9
+                tightness1 = 0.1
                 condition = condition = np.stack((results.segmentation_mask,) * 3, axis=-1) > tightness
+                condition1 = condition1 = np.stack((results.segmentation_mask,) * 3, axis=-1) > tightness1
                 bg_image = np.zeros(image.shape, dtype=np.uint8)
                 segmented_image = np.where(condition, segmented_image, bg_image)
+                segmented_image1 = np.where(condition1, segmented_image1, bg_image)
 
         except:
             pass
@@ -172,7 +197,7 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
 
         # mp_drawing.plot_landmarks(results.pose_world_landmarks,  mp_pose.POSE_CONNECTIONS)     
         
-        fig = plot_landmarks(mp_pose, results.pose_world_landmarks,  mp_pose.POSE_CONNECTIONS)
+        # fig = plot_landmarks(mp_pose, results.pose_world_landmarks,  mp_pose.POSE_CONNECTIONS)
 
         # Display and write the video
         if ret == True:
@@ -189,7 +214,47 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
             if results.segmentation_mask is None:
                 print('Segmentation not working')
             else:
-                cv2.imshow('Segmentation',segmented_image)
+                # cv2.imshow('Segmentation',segmented_image)
+                height, width, _ = segmented_image.shape
+                desired_width = width
+                desired_height = int((desired_width / width) * height)
+                resized_image = cv2.resize(segmented_image, (desired_width, desired_height))
+                resized_image1 = cv2.resize(segmented_image1, (desired_width, desired_height))
+                # Overlay two segmented images
+                alpha = 0.5
+                segment_overlay = cv2.addWeighted(resized_image, 1.0-alpha, resized_image1, alpha, 0)
+                mask = cv2.absdiff(resized_image,resized_image1)
+                mask_gray = cv2.cvtColor(mask,cv2.COLOR_BGR2GRAY)
+                roi_mask = np.zeros_like(mask_gray)
+                # Calculate the coefficients (a, b, c) of the line equation Ax + By + C = 0
+                thresh_a, thresh_b, thresh_c = np.cross([left_footIndex[0]*width, left_footIndex[1]*height, 1], [left_heel[0]*width, left_heel[1]*height, 1])
+                # Create a mask based on the line equation
+                mask_belowLine = create_line_mask(mask_gray.shape[:2], [thresh_a, thresh_b, thresh_c])
+                # Apply the mask to the original frame
+                # masked_belowLine = cv2.bitwise_and(mask_gray, mask_gray, mask=mask_belowLine)
+                # Apply additional y threshold for testing
+                y_cutoff = 1678
+                mask_belowLine[:y_cutoff,:] = 0
+                masked_belowLine = cv2.bitwise_and(mask_gray,mask_gray, mask=mask_belowLine)
+                average_intensity = np.mean(masked_belowLine)
+                print('Average pixel intensity = ', average_intensity)
+                # Display the resized image
+                cv2.imshow('Segmentation', segment_overlay)
+                cv2.imshow('Mask', mask_gray)
+                cv2.imshow('ROI Masked',masked_belowLine)
+                # Plot pixel intensity over time
+                time_points.append(time_points[-1] + 1 if time_points else 0)
+                intensity_values.append(average_intensity)
+                # ax.clear()
+                ax.plot(time_points, intensity_values, color='b')
+                ax.set_xlabel('Time')
+                ax.set_ylabel('Average Pixel Intensity')
+                ax.set_title('Real-time Average Pixel Intensity')
+                ax.grid(True)
+                # ax.pause(0.01)  # Adjust the pause duration as needed
+                display(fig)
+                clear_output(wait=True)
+                # plt.pause(0.01)
 
             # Pause or stop the video when instructed
             key = cv2.waitKey(5)
@@ -206,5 +271,8 @@ with mp_pose.Pose(min_detection_confidence=0.9, min_tracking_confidence=0.5, ena
 
 # Output the interactive plotly figure to browser to view
 # fig.show()
+
+# Show the Pixel Intensity plot
+# plt.show()
 
 

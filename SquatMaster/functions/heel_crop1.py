@@ -1,4 +1,3 @@
-
 def heel_crop(points, frame, frame_count_trim):
 
     x_coords, y_coords = zip(*points)
@@ -34,7 +33,7 @@ def heel_crop(points, frame, frame_count_trim):
     image_trimmed = frame[min_y:max_y, min_x:max_x]
     frame_count_trim += 1
 
-    # print([min_x,max_x,min_y,max_y])
+    print([min_x,max_x,min_y,max_y])
 
     return image_trimmed, frame_count_trim
 
